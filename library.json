@@ -1,0 +1,36 @@
+{
+  "name": "VietnameseMarketData",
+  "version": "1.0.0",
+  "description": "Thu vien cap nhat gia vang (SJC, Nhan 9999, The gioi) va gia xang dau (RON95, E5, Diesel, Mazut) tai Viet Nam cho ESP32 va Arduino.",
+  "keywords": [
+    "vietnam",
+    "market",
+    "gold",
+    "petrol",
+    "gia-vang",
+    "gia-xang",
+    "esp32",
+    "arduino"
+  ],
+  "authors": [
+    {
+      "name": "mvtcode",
+      "url": "https://github.com/mvtcode"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mvtcode/VietnameseMarketData.git"
+  },
+  "license": "MIT",
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "export": {
+    "include": [
+      "src/*",
+      "library.json",
+      "library.properties",
+      "README.md"
+    ]
+  }
+}
