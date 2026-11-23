@@ -152,59 +152,35 @@ static bool executeFetch(MarketInfo &resultInfo) {
     String payload = "";
     bool fetchSuccess = false;
 
-    // 1. Thu HTTPS neu heap lien tuc du cho TLS buffer
-    const bool canUseTLS = (maxAlloc >= 30 * 1024);
-    if (canUseTLS) {
-        WiFiClientSecure client;
-        client.setInsecure();
-        client.setTimeout(10000);
-
-        const char *host = "gw.vnexpress.net";
-        const int port = 443;
-        VMD_LOG_I("Connecting TLS to %s:%d...", host, port);
-
-        if (client.connect(host, port)) {
-            HTTPClient http;
-            http.setTimeout(10000);
-            http.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-            http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-
-            const char *httpsUrl = "https://gw.vnexpress.net/th?types=gia_vang_v2,gia_xang_dau";
-            if (http.begin(client, httpsUrl)) {
-                int httpCode = http.GET();
-                if (httpCode == HTTP_CODE_OK) {
-                    payload = http.getString();
-                    fetchSuccess = true;
-                    VMD_LOG_I("HTTPS fetch OK, length: %d", payload.length());
-                } else {
-                    VMD_LOG_W("HTTPS Error: %d", httpCode);
-                }
-                http.end();
-            }
-        }
-        client.stop();
+    // Kiem tra heap cho TLS (toi thieu 15KB)
+    const bool canUseTLS = (maxAlloc >= 15 * 1024);
+    if (!canUseTLS) {
+        VMD_LOG_W("Heap too fragmented for TLS: maxAlloc=%d", maxAlloc);
+        return false;
     }
 
-    // 2. HTTP Fallback qua port 80
-    if (!fetchSuccess) {
-        VMD_LOG_W("Trying HTTP fallback (port 80)...");
-        HTTPClient httpPlain;
-        httpPlain.setTimeout(8000);
-        httpPlain.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-        httpPlain.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(15);
 
-        const char *httpUrl = "http://gw.vnexpress.net/th?types=gia_vang_v2,gia_xang_dau";
-        if (httpPlain.begin(httpUrl)) {
-            int httpCode = httpPlain.GET();
-            if (httpCode == HTTP_CODE_OK) {
-                payload = httpPlain.getString();
-                fetchSuccess = true;
-                VMD_LOG_I("HTTP fallback OK, length: %d", payload.length());
-            } else {
-                VMD_LOG_W("HTTP fallback Error: %d", httpCode);
-            }
-            httpPlain.end();
+    HTTPClient http;
+    http.setTimeout(20000);
+    http.setConnectTimeout(20000);
+    http.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+
+    const char *httpsUrl = "https://gw.vnexpress.net/th?types=gia_vang_v2,gia_xang_dau";
+    VMD_LOG_I("Fetching market data from: %s", httpsUrl);
+    if (http.begin(client, httpsUrl)) {
+        int httpCode = http.GET();
+        if (httpCode == HTTP_CODE_OK) {
+            payload = http.getString();
+            fetchSuccess = true;
+            VMD_LOG_I("HTTPS fetch OK, length: %d", payload.length());
+        } else {
+            VMD_LOG_W("HTTPS Error: %d", httpCode);
         }
+        http.end();
     }
 
     if (fetchSuccess && payload.length() > 0) {
@@ -256,7 +232,7 @@ void VietnameseMarketData::update(bool wifiConnected, bool force, uint32_t inter
         BaseType_t res = xTaskCreatePinnedToCore(
             fetchMarketTask,
             "VnMarketTask",
-            12 * 1024,
+            6 * 1024,
             NULL,
             1,
             NULL,
