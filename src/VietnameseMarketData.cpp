@@ -18,6 +18,7 @@ SemaphoreHandle_t VietnameseMarketData::marketMutex = NULL;
 uint32_t VietnameseMarketData::last_fetch_time = 0;
 bool VietnameseMarketData::is_fetching = false;
 uint32_t VietnameseMarketData::update_interval_ms = 30 * 60 * 1000; // 30 phut
+char VietnameseMarketData::api_url[128] = "https://gw.vnexpress.net/th?types=gia_vang_v2,gia_xang_dau";
 
 static String extractJsonStr(const String &str, int startPos, const char *key) {
     int keyIdx = str.indexOf(key, startPos);
@@ -147,7 +148,8 @@ static bool parseMarketPayload(const String &payload, MarketInfo &outInfo) {
     return parsed;
 }
 
-static bool executeFetch(MarketInfo &resultInfo) {
+static bool executeFetch(const char *url, MarketInfo &resultInfo) {
+    if (!url || strlen(url) == 0) return false;
     uint32_t maxAlloc = ESP.getMaxAllocHeap();
     String payload = "";
     bool fetchSuccess = false;
@@ -161,17 +163,16 @@ static bool executeFetch(MarketInfo &resultInfo) {
 
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(15);
+    client.setTimeout(15000);
 
     HTTPClient http;
-    http.setTimeout(20000);
-    http.setConnectTimeout(20000);
+    http.setTimeout(15000);
+    http.setConnectTimeout(15000);
     http.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
-    const char *httpsUrl = "https://gw.vnexpress.net/th?types=gia_vang_v2,gia_xang_dau";
-    VMD_LOG_I("Fetching market data from: %s", httpsUrl);
-    if (http.begin(client, httpsUrl)) {
+    VMD_LOG_I("Fetching market data from: %s", url);
+    if (http.begin(client, url)) {
         int httpCode = http.GET();
         if (httpCode == HTTP_CODE_OK) {
             payload = http.getString();
@@ -181,6 +182,7 @@ static bool executeFetch(MarketInfo &resultInfo) {
             VMD_LOG_W("HTTPS Error: %d", httpCode);
         }
         http.end();
+        client.stop();
     }
 
     if (fetchSuccess && payload.length() > 0) {
@@ -189,12 +191,23 @@ static bool executeFetch(MarketInfo &resultInfo) {
     return false;
 }
 
-void VietnameseMarketData::init() {
+void VietnameseMarketData::init(const char *endpoint) {
     if (marketMutex == NULL) {
         marketMutex = xSemaphoreCreateMutex();
     }
+    if (endpoint && strlen(endpoint) > 0) {
+        strncpy(api_url, endpoint, sizeof(api_url) - 1);
+        api_url[sizeof(api_url) - 1] = '\0';
+    }
     last_fetch_time = 0;
     is_fetching = false;
+}
+
+void VietnameseMarketData::setApiUrl(const char *url) {
+    if (url && strlen(url) > 0) {
+        strncpy(api_url, url, sizeof(api_url) - 1);
+        api_url[sizeof(api_url) - 1] = '\0';
+    }
 }
 
 void VietnameseMarketData::setUpdateInterval(uint32_t intervalMinutes) {
@@ -203,14 +216,17 @@ void VietnameseMarketData::setUpdateInterval(uint32_t intervalMinutes) {
 }
 
 void VietnameseMarketData::fetchMarketTask(void *param) {
-    MarketInfo info;
-    if (executeFetch(info)) {
-        if (marketMutex != NULL && xSemaphoreTake(marketMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
-            info.is_valid = true;
-            info.last_update_time = millis();
-            current_market = info;
-            xSemaphoreGive(marketMutex);
+    MarketInfo *info = new MarketInfo();
+    if (info) {
+        if (executeFetch(api_url, *info)) {
+            if (marketMutex != NULL && xSemaphoreTake(marketMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+                info->is_valid = true;
+                info->last_update_time = millis();
+                current_market = *info;
+                xSemaphoreGive(marketMutex);
+            }
         }
+        delete info;
     }
     is_fetching = false;
     vTaskDelete(NULL);
@@ -232,7 +248,7 @@ void VietnameseMarketData::update(bool wifiConnected, bool force, uint32_t inter
         BaseType_t res = xTaskCreatePinnedToCore(
             fetchMarketTask,
             "VnMarketTask",
-            6 * 1024,
+            8 * 1024,
             NULL,
             1,
             NULL,
@@ -247,7 +263,7 @@ void VietnameseMarketData::update(bool wifiConnected, bool force, uint32_t inter
 
 bool VietnameseMarketData::fetchNow() {
     MarketInfo info;
-    if (executeFetch(info)) {
+    if (executeFetch(api_url, info)) {
         if (marketMutex != NULL && xSemaphoreTake(marketMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
             info.is_valid = true;
             info.last_update_time = millis();

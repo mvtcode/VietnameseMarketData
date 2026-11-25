@@ -34,11 +34,13 @@ private:
     static uint32_t last_fetch_time;
     static bool is_fetching;
     static uint32_t update_interval_ms;
+    static char api_url[128];
 
     static void fetchMarketTask(void *param);
 
 public:
-    static void init();
+    static void init(const char *endpoint = "https://gw.vnexpress.net/th?types=gia_vang_v2,gia_xang_dau");
+    static void setApiUrl(const char *url);
     static void setUpdateInterval(uint32_t intervalMinutes);
     static void update(bool wifiConnected, bool force = false, uint32_t intervalMinutes = 0);
     static bool fetchNow();
